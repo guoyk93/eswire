@@ -2,6 +2,7 @@ package net.guoyk.eswire;
 
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.store.SimpleFSDirectory;
 import org.elasticsearch.action.admin.indices.close.CloseIndexRequest;
 import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
@@ -35,6 +36,7 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 public class ElasticWire implements Closeable, AutoCloseable {
 
@@ -155,7 +157,7 @@ public class ElasticWire implements Closeable, AutoCloseable {
             }
             for (int i = 0; i < limit; i++) {
                 Document doc = reader.document(i);
-                LOGGER.info("fields = {}", doc.getFields());
+                LOGGER.info("fields = {}", doc.getFields().stream().map(IndexableField::name).collect(Collectors.toList()));
             }
             reader.close();
         }
