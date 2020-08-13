@@ -1,9 +1,8 @@
 package net.guoyk.eswire;
 
-import org.apache.lucene.document.Document;
 import org.apache.lucene.index.DirectoryReader;
-import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.store.SimpleFSDirectory;
+import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.action.admin.indices.close.CloseIndexRequest;
 import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest;
@@ -36,7 +35,6 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 
 public class ElasticWire implements Closeable, AutoCloseable {
 
@@ -148,18 +146,15 @@ public class ElasticWire implements Closeable, AutoCloseable {
 
         for (Map.Entry<Integer, String> entry : shardToDirs.entrySet()) {
             Integer shard = entry.getKey();
-            String dir = entry.getValue();
-            DirectoryReader reader = DirectoryReader.open(new SimpleFSDirectory(Paths.get(dir)));
+            DirectoryReader reader = DirectoryReader.open(new SimpleFSDirectory(Paths.get(entry.getValue())));
             LOGGER.info("index {} shard {} docs count {}", index, shard, reader.numDocs());
             int limit = 5;
             if (limit > reader.numDocs()) {
                 limit = reader.numDocs();
             }
             for (int i = 0; i < limit; i++) {
-                Document doc = reader.document(i);
-                LOGGER.info("fields = {}", doc.getFields().stream().map(IndexableField::name).collect(Collectors.toList()));
-                LOGGER.info("_source as string = {}", doc.getField("_source").stringValue());
-                LOGGER.info("_source as binary = {}", doc.getField("_source").binaryValue());
+                BytesRef source = reader.document(i).getField("_source").binaryValue();
+                LOGGER.info("_source = {}", new String(source.bytes));
             }
             reader.close();
         }
