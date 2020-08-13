@@ -1,5 +1,6 @@
 package net.guoyk.eswire;
 
+import org.elasticsearch.action.admin.indices.close.CloseIndexRequest;
 import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest;
 import org.elasticsearch.action.admin.indices.recovery.RecoveryRequest;
@@ -26,6 +27,8 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -116,6 +119,27 @@ public class ElasticWire implements Closeable, AutoCloseable {
         if (totalDocs != indicesStatsResponse.getTotal().docs.getCount()) {
             throw new IllegalStateException("segment docs count sum != index docs count");
         }
+        // close index
+        CloseIndexRequest closeIndexRequest = new CloseIndexRequest(index);
+        this.client.admin().indices().close(closeIndexRequest).get();
+        LOGGER.info("index closed: {}", index);
+        // search files
+        Map<Integer, String> shardToDirs = new HashMap<>();
+        for (String dataDir : this.options.getDataDirs()) {
+            shardToSegments.forEach((shardId, segmentName) -> {
+                if (shardToDirs.get(shardId) != null) {
+                    throw new IllegalStateException("more than 1 dir per shard");
+                }
+                Path path = Paths.get(dataDir, "nodes", "0", "indices", uuid, shardId.toString(), "index");
+                if (path.toFile().exists()) {
+                    shardToDirs.put(shardId, path.toString());
+                }
+            });
+        }
+        if (shardToDirs.size() != shardToSegments.size()) {
+            throw new IllegalStateException("missing shard dirs");
+        }
+        LOGGER.info("index shard directories: {}", shardToDirs);
     }
 
     @Override
