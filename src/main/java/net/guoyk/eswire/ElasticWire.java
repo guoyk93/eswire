@@ -132,6 +132,7 @@ public class ElasticWire implements Closeable, AutoCloseable {
                 }
                 Path path = Paths.get(dataDir, "nodes", "0", "indices", uuid, shardId.toString(), "index");
                 if (path.toFile().exists()) {
+                    LOGGER.info("index {} shard {} dir {}", index, shardId, path.toString());
                     shardToDirs.put(shardId, path.toString());
                 }
             });
