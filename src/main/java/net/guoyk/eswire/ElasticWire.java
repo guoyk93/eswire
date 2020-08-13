@@ -4,6 +4,8 @@ import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest;
 import org.elasticsearch.action.admin.indices.recovery.RecoveryRequest;
 import org.elasticsearch.action.admin.indices.recovery.RecoveryResponse;
+import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest;
+import org.elasticsearch.action.admin.indices.settings.get.GetSettingsResponse;
 import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest;
 import org.elasticsearch.action.support.ActiveShardCount;
 import org.elasticsearch.client.transport.TransportClient;
@@ -73,6 +75,11 @@ public class ElasticWire implements Closeable, AutoCloseable {
             }
         }
         LOGGER.info("index recovered: {}", index);
+        // get uuid
+        GetSettingsRequest getSettingsRequest = new GetSettingsRequest().indices(index);
+        GetSettingsResponse getSettingsResponse = this.client.admin().indices().getSettings(getSettingsRequest).get();
+        String uuid = getSettingsResponse.getSetting(index, "uuid");
+        LOGGER.info("index uuid: {} = {}", index, uuid);
     }
 
     @Override
