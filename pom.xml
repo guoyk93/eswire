@@ -41,6 +41,13 @@
     <profiles>
         <profile>
             <id>exec</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>log4j-over-slf4j</artifactId>
+                    <version>1.7.30</version>
+                </dependency>
+            </dependencies>
             <properties>
                 <slf4j-simple.scope>compile</slf4j-simple.scope>
             </properties>
