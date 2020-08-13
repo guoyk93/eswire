@@ -4,6 +4,10 @@ import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest;
 import org.elasticsearch.action.admin.indices.recovery.RecoveryRequest;
 import org.elasticsearch.action.admin.indices.recovery.RecoveryResponse;
+import org.elasticsearch.action.admin.indices.segments.IndexShardSegments;
+import org.elasticsearch.action.admin.indices.segments.IndicesSegmentResponse;
+import org.elasticsearch.action.admin.indices.segments.IndicesSegmentsRequest;
+import org.elasticsearch.action.admin.indices.segments.ShardSegments;
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest;
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsResponse;
 import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest;
@@ -11,6 +15,7 @@ import org.elasticsearch.action.support.ActiveShardCount;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.TransportAddress;
+import org.elasticsearch.index.engine.Segment;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +24,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
@@ -80,6 +86,28 @@ public class ElasticWire implements Closeable, AutoCloseable {
         GetSettingsResponse getSettingsResponse = this.client.admin().indices().getSettings(getSettingsRequest).get();
         String uuid = getSettingsResponse.getSetting(index, "index.uuid");
         LOGGER.info("index uuid: {} = {}", index, uuid);
+        // get segments
+        long totalDocs = 0;
+        HashMap<Integer, String> shardToSegments = new HashMap<>();
+        IndicesSegmentsRequest indicesSegmentsRequest = new IndicesSegmentsRequest(index);
+        IndicesSegmentResponse indicesSegmentResponse = this.client.admin().indices().segments(indicesSegmentsRequest).get();
+        for (Map.Entry<Integer, IndexShardSegments> entry : indicesSegmentResponse.getIndices().get(index).getShards().entrySet()) {
+            Integer shardId = entry.getKey();
+            IndexShardSegments shards = entry.getValue();
+            for (ShardSegments shard : shards) {
+                if (shard.getShardRouting().primary()) {
+                    for (Segment segment : shard.getSegments()) {
+                        if (shardToSegments.get(shardId) != null) {
+                            throw new IllegalAccessError("more than 1 segment per shard");
+                        }
+                        shardToSegments.put(shardId, segment.mergeId);
+                        totalDocs += segment.getNumDocs();
+                    }
+                }
+            }
+        }
+        LOGGER.info("index segments: {}", shardToSegments);
+        LOGGER.info("index total: {}", totalDocs);
     }
 
     @Override
