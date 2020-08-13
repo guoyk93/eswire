@@ -155,7 +155,7 @@ public class ElasticWire implements Closeable, AutoCloseable {
             }
             for (int i = 0; i < limit; i++) {
                 Document doc = reader.document(i);
-                LOGGER.info("source = {}", doc.get("_source"));
+                LOGGER.info("fields = {}", doc.getFields());
             }
             reader.close();
         }
