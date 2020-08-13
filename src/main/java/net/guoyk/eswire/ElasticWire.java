@@ -1,5 +1,7 @@
 package net.guoyk.eswire;
 
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.store.SimpleFSDirectory;
 import org.elasticsearch.action.admin.indices.close.CloseIndexRequest;
 import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest;
@@ -50,7 +52,7 @@ public class ElasticWire implements Closeable, AutoCloseable {
                 .addTransportAddress(new TransportAddress(InetAddress.getByName(options.getHost()), 9300));
     }
 
-    public void export(String index, ElasticWireCallback callback) throws ExecutionException, InterruptedException {
+    public void export(String index, ElasticWireCallback callback) throws ExecutionException, InterruptedException, IOException {
         // open and wait for all active shards
         OpenIndexRequest openIndexRequest = new OpenIndexRequest(index);
         openIndexRequest.waitForActiveShards(ActiveShardCount.ALL);
@@ -140,6 +142,14 @@ public class ElasticWire implements Closeable, AutoCloseable {
             throw new IllegalStateException("missing shard dirs");
         }
         LOGGER.info("index shard directories: {}", shardToDirs);
+
+        for (Map.Entry<Integer, String> entry : shardToDirs.entrySet()) {
+            Integer shard = entry.getKey();
+            String dir = entry.getValue();
+            DirectoryReader reader = DirectoryReader.open(new SimpleFSDirectory(Paths.get(dir)));
+            LOGGER.info("index {} shard {} docs count {}", index, shard, reader.numDocs());
+            reader.close();
+        }
     }
 
     @Override
