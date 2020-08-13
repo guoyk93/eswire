@@ -127,12 +127,11 @@ public class ElasticWire implements Closeable, AutoCloseable {
         Map<Integer, String> shardToDirs = new HashMap<>();
         for (String dataDir : this.options.getDataDirs()) {
             shardToSegments.forEach((shardId, segmentName) -> {
-                if (shardToDirs.get(shardId) != null) {
-                    throw new IllegalStateException("more than 1 dir per shard");
-                }
                 Path path = Paths.get(dataDir, "nodes", "0", "indices", uuid, shardId.toString(), "index");
                 if (path.toFile().exists()) {
-                    LOGGER.info("index {} shard {} dir {}", index, shardId, path.toString());
+                    if (shardToDirs.get(shardId) != null) {
+                        throw new IllegalStateException("more than 1 dir per shard");
+                    }
                     shardToDirs.put(shardId, path.toString());
                 }
             });
