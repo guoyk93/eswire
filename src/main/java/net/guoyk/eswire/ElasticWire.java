@@ -64,6 +64,7 @@ public class ElasticWire implements Closeable, AutoCloseable {
             RecoveryRequest recoveryRequest = new RecoveryRequest(index);
             recoveryRequest.activeOnly(true);
             RecoveryResponse recoveryResponse = this.client.admin().indices().recoveries(recoveryRequest).get();
+            LOGGER.info("index recovery: {} {}", index, recoveryResponse.shardRecoveryStates());
             if (!recoveryResponse.hasRecoveries()) {
                 break;
             }
