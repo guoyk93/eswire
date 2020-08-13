@@ -26,6 +26,11 @@
             <version>7.3.1</version>
         </dependency>
         <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-codecs</artifactId>
+            <version>7.3.1</version>
+        </dependency>
+        <dependency>
             <groupId>org.yaml</groupId>
             <artifactId>snakeyaml</artifactId>
             <version>1.26</version>
@@ -43,6 +48,7 @@
         </dependency>
     </dependencies>
 
+
     <profiles>
         <profile>
             <id>exec</id>
@@ -59,27 +65,21 @@
             <build>
                 <plugins>
                     <plugin>
-                        <artifactId>maven-assembly-plugin</artifactId>
-                        <configuration>
-                            <appendAssemblyId>false</appendAssemblyId>
-                            <descriptorRefs>
-                                <descriptorRef>jar-with-dependencies</descriptorRef>
-                            </descriptorRefs>
-                            <archive>
-                                <manifest>
-                                    <mainClass>net.guoyk.eswire.Main</mainClass>
-                                </manifest>
-                            </archive>
-                        </configuration>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <version>3.1.1</version>
                         <executions>
                             <execution>
-                                <id>make-assembly</id>
+                                <id>copy</id>
                                 <phase>package</phase>
                                 <goals>
-                                    <goal>assembly</goal>
+                                    <goal>copy-dependencies</goal>
                                 </goals>
                             </execution>
                         </executions>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>
