@@ -29,7 +29,6 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
@@ -44,36 +43,36 @@ public class ElasticWire implements Closeable, AutoCloseable {
 
     private final ElasticWireOptions options;
 
-    public ElasticWire(ElasticWireOptions options) throws UnknownHostException {
+    public ElasticWire(ElasticWireOptions options) throws IOException {
         this.options = options;
+        // 创建 Transport 客户端
         Settings settings = Settings.builder()
                 .put("client.transport.ignore_cluster_name", true)
+                .put("client.transport.sniff", options.isSniff())
                 .build();
         this.client = new PreBuiltTransportClient(settings)
-                .addTransportAddress(new TransportAddress(InetAddress.getByName(options.getHost()), 9300));
+                .addTransportAddress(new TransportAddress(InetAddress.getByName(options.getHost()), options.getPort()));
     }
 
     public void export(String index, ElasticWireCallback callback) throws ExecutionException, InterruptedException, IOException {
-        // open and wait for all active shards
+        // 打开，并等待所有分片激活
         OpenIndexRequest openIndexRequest = new OpenIndexRequest(index);
         openIndexRequest.waitForActiveShards(ActiveShardCount.ALL);
         this.client.admin().indices().open(openIndexRequest).get();
-        LOGGER.info("open index: {}", index);
-        // force merge
+        LOGGER.info("[eswire: {}] index opened", index);
+        // 强制合并所有分片的段数到 1
         ForceMergeRequest forceMergeRequest = new ForceMergeRequest(index);
         forceMergeRequest.maxNumSegments(1);
         this.client.admin().indices().forceMerge(forceMergeRequest).get();
-        LOGGER.info("force merge index: {}", index);
-        // transfer
+        LOGGER.info("[eswire: {}] index force merged", index);
+        // 强制设置路由规则，将所有主分片迁移到本机
         UpdateSettingsRequest updateSettingsRequest = new UpdateSettingsRequest(index);
-        Settings.Builder settingsBuilder = Settings.builder();
-        for (Map.Entry<String, String> entry : this.options.getNodeAttrs().entrySet()) {
-            settingsBuilder = settingsBuilder.put("index.routing.allocation.require." + entry.getKey(), entry.getValue());
-        }
+        Settings.Builder settingsBuilder = Settings.builder()
+                .put("index.routing.allocation.require." + this.options.getNodeAttrKey(), this.options.getNodeAttrValue());
         updateSettingsRequest.settings(settingsBuilder.build());
         this.client.admin().indices().updateSettings(updateSettingsRequest).get();
-        LOGGER.info("update index settings: {}", index);
-        // wait for recovery
+        LOGGER.info("[eswire: {}] index routing updated", index);
+        // 等待分片迁移完成
         for (; ; ) {
             //noinspection BusyWait
             Thread.sleep(5000);
@@ -88,16 +87,16 @@ public class ElasticWire implements Closeable, AutoCloseable {
                 break;
             }
         }
-        LOGGER.info("index recovered: {}", index);
-        // get uuid
+        LOGGER.info("[eswire: {}] index recovered", index);
+        // 获取索引 UUID
         GetSettingsRequest getSettingsRequest = new GetSettingsRequest().indices(index);
         GetSettingsResponse getSettingsResponse = this.client.admin().indices().getSettings(getSettingsRequest).get();
         String uuid = getSettingsResponse.getSetting(index, "index.uuid");
-        LOGGER.info("index uuid: {} = {}", index, uuid);
+        LOGGER.info("[eswire: {}] index uuid = {}", index, uuid);
         IndicesStatsRequest indicesStatsRequest = new IndicesStatsRequest();
         indicesStatsRequest.indices(index);
         IndicesStatsResponse indicesStatsResponse = this.client.admin().indices().stats(indicesStatsRequest).get();
-        // get segments
+        // 获取分段信息
         long totalDocs = 0;
         HashMap<Integer, String> shardToSegments = new HashMap<>();
         IndicesSegmentsRequest indicesSegmentsRequest = new IndicesSegmentsRequest(index);
@@ -109,7 +108,7 @@ public class ElasticWire implements Closeable, AutoCloseable {
                 if (shard.getShardRouting().primary()) {
                     for (Segment segment : shard.getSegments()) {
                         if (shardToSegments.get(shardId) != null) {
-                            throw new IllegalStateException("more than 1 segment per shard");
+                            throw new IllegalStateException("got more than 1 segment per shard");
                         }
                         shardToSegments.put(shardId, segment.getName());
                         totalDocs += segment.getNumDocs();
@@ -117,16 +116,16 @@ public class ElasticWire implements Closeable, AutoCloseable {
                 }
             }
         }
-        LOGGER.info("index segments: {}", shardToSegments);
-        LOGGER.info("index total: {}", totalDocs);
+        LOGGER.info("[eswire: {}] index segments = {}", index, shardToSegments);
+        LOGGER.info("[eswire: {}] index segments total docs = {}", index, totalDocs);
         if (totalDocs != indicesStatsResponse.getTotal().docs.getCount()) {
             throw new IllegalStateException("segment docs count sum != index docs count");
         }
-        // close index
+        // 完成所有信息收集，关闭索引，防止冲突
         CloseIndexRequest closeIndexRequest = new CloseIndexRequest(index);
         this.client.admin().indices().close(closeIndexRequest).get();
-        LOGGER.info("index closed: {}", index);
-        // search files
+        LOGGER.info("[eswire: {}] index closed", index);
+        // 从本地路径搜索索引数据目录
         Map<Integer, String> shardToDirs = new HashMap<>();
         for (String dataDir : this.options.getDataDirs()) {
             shardToSegments.forEach((shardId, segmentName) -> {
@@ -142,21 +141,35 @@ public class ElasticWire implements Closeable, AutoCloseable {
         if (shardToDirs.size() != shardToSegments.size()) {
             throw new IllegalStateException("missing shard dirs");
         }
-        LOGGER.info("index shard directories: {}", shardToDirs);
-
+        LOGGER.info("[eswire: {}] index shard directories = {}", index, shardToDirs);
+        // 使用 Lucene 库读取所有分片的数据目录
+        long baseCount = 0;
         for (Map.Entry<Integer, String> entry : shardToDirs.entrySet()) {
-            Integer shard = entry.getKey();
             DirectoryReader reader = DirectoryReader.open(new SimpleFSDirectory(Paths.get(entry.getValue())));
-            LOGGER.info("index {} shard {} docs count {}", index, shard, reader.numDocs());
-            int limit = 5;
-            if (limit > reader.numDocs()) {
-                limit = reader.numDocs();
-            }
-            for (int i = 0; i < limit; i++) {
+            boolean stop = false;
+            // 遍历所有文档
+            for (int i = 0; i < reader.numDocs(); i++) {
                 BytesRef source = reader.document(i).getField("_source").binaryValue();
-                LOGGER.info("_source = {}", new String(source.bytes));
+                if (source != null) {
+                    if (!callback.handleDocumentSource(source.bytes, baseCount + i, totalDocs)) {
+                        stop = true;
+                    }
+                } else {
+                    if (!callback.handleDocumentSource(null, baseCount + i, totalDocs)) {
+                        stop = true;
+                    }
+                }
+                if (stop) {
+                    break;
+                }
             }
+            // 累加计数基数
+            baseCount += reader.numDocs();
             reader.close();
+            // 如果取消，则退出不在遍历
+            if (stop) {
+                break;
+            }
         }
     }
 
