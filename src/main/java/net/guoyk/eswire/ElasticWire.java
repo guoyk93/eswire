@@ -11,6 +11,8 @@ import org.elasticsearch.action.admin.indices.segments.ShardSegments;
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest;
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsResponse;
 import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest;
+import org.elasticsearch.action.admin.indices.stats.IndicesStatsRequest;
+import org.elasticsearch.action.admin.indices.stats.IndicesStatsResponse;
 import org.elasticsearch.action.support.ActiveShardCount;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
@@ -86,6 +88,9 @@ public class ElasticWire implements Closeable, AutoCloseable {
         GetSettingsResponse getSettingsResponse = this.client.admin().indices().getSettings(getSettingsRequest).get();
         String uuid = getSettingsResponse.getSetting(index, "index.uuid");
         LOGGER.info("index uuid: {} = {}", index, uuid);
+        IndicesStatsRequest indicesStatsRequest = new IndicesStatsRequest();
+        indicesStatsRequest.indices(index);
+        IndicesStatsResponse indicesStatsResponse = this.client.admin().indices().stats(indicesStatsRequest).get();
         // get segments
         long totalDocs = 0;
         HashMap<Integer, String> shardToSegments = new HashMap<>();
@@ -98,9 +103,9 @@ public class ElasticWire implements Closeable, AutoCloseable {
                 if (shard.getShardRouting().primary()) {
                     for (Segment segment : shard.getSegments()) {
                         if (shardToSegments.get(shardId) != null) {
-                            throw new IllegalAccessError("more than 1 segment per shard");
+                            throw new IllegalStateException("more than 1 segment per shard");
                         }
-                        shardToSegments.put(shardId, segment.mergeId);
+                        shardToSegments.put(shardId, segment.getName());
                         totalDocs += segment.getNumDocs();
                     }
                 }
@@ -108,6 +113,9 @@ public class ElasticWire implements Closeable, AutoCloseable {
         }
         LOGGER.info("index segments: {}", shardToSegments);
         LOGGER.info("index total: {}", totalDocs);
+        if (totalDocs != indicesStatsResponse.getTotal().docs.getCount()) {
+            throw new IllegalStateException("segment docs count sum != index docs count");
+        }
     }
 
     @Override
