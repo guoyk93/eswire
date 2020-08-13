@@ -78,7 +78,7 @@ public class ElasticWire implements Closeable, AutoCloseable {
         // get uuid
         GetSettingsRequest getSettingsRequest = new GetSettingsRequest().indices(index);
         GetSettingsResponse getSettingsResponse = this.client.admin().indices().getSettings(getSettingsRequest).get();
-        String uuid = getSettingsResponse.getSetting(index, "uuid");
+        String uuid = getSettingsResponse.getSetting(index, "index.uuid");
         LOGGER.info("index uuid: {} = {}", index, uuid);
     }
 
