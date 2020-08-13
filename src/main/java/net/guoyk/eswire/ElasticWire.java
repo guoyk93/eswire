@@ -1,5 +1,6 @@
 package net.guoyk.eswire;
 
+import org.apache.lucene.document.Document;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.store.SimpleFSDirectory;
 import org.elasticsearch.action.admin.indices.close.CloseIndexRequest;
@@ -148,6 +149,14 @@ public class ElasticWire implements Closeable, AutoCloseable {
             String dir = entry.getValue();
             DirectoryReader reader = DirectoryReader.open(new SimpleFSDirectory(Paths.get(dir)));
             LOGGER.info("index {} shard {} docs count {}", index, shard, reader.numDocs());
+            int limit = 5;
+            if (limit > reader.numDocs()) {
+                limit = reader.numDocs();
+            }
+            for (int i = 0; i < limit; i++) {
+                Document doc = reader.document(i);
+                LOGGER.info("source = {}", doc.get("_source"));
+            }
             reader.close();
         }
     }
