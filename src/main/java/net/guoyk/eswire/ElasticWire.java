@@ -3,13 +3,10 @@ package net.guoyk.eswire;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.store.SimpleFSDirectory;
 import org.apache.lucene.util.BytesRef;
-import org.elasticsearch.action.admin.cluster.reroute.ClusterRerouteRequest;
 import org.elasticsearch.action.admin.indices.close.CloseIndexRequest;
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest;
-import org.elasticsearch.action.admin.indices.recovery.RecoveryRequest;
-import org.elasticsearch.action.admin.indices.recovery.RecoveryResponse;
 import org.elasticsearch.action.admin.indices.segments.IndexShardSegments;
 import org.elasticsearch.action.admin.indices.segments.IndicesSegmentResponse;
 import org.elasticsearch.action.admin.indices.segments.IndicesSegmentsRequest;
@@ -78,24 +75,6 @@ public class ElasticWire implements Closeable, AutoCloseable {
         updateSettingsRequest.settings(settingsBuilder.build());
         this.client.admin().indices().updateSettings(updateSettingsRequest).get();
         LOGGER.info("[eswire: {}] index routing updated", index);
-        // 强制执行集群重新路由
-        this.client.admin().cluster().reroute(new ClusterRerouteRequest()).get();
-        // 等待分片迁移完成
-        for (; ; ) {
-            //noinspection BusyWait
-            Thread.sleep(5000);
-            RecoveryRequest recoveryRequest = new RecoveryRequest(index);
-            recoveryRequest.activeOnly(true);
-            RecoveryResponse recoveryResponse = this.client.admin().indices().recoveries(recoveryRequest).get();
-            if (recoveryResponse.hasRecoveries()) {
-                if (recoveryResponse.shardRecoveryStates().get(index).isEmpty()) {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        LOGGER.info("[eswire: {}] index recovered", index);
         // 获取索引 UUID
         GetSettingsRequest getSettingsRequest = new GetSettingsRequest().indices(index);
         GetSettingsResponse getSettingsResponse = this.client.admin().indices().getSettings(getSettingsRequest).get();
@@ -104,16 +83,36 @@ public class ElasticWire implements Closeable, AutoCloseable {
         IndicesStatsRequest indicesStatsRequest = new IndicesStatsRequest();
         indicesStatsRequest.indices(index);
         IndicesStatsResponse indicesStatsResponse = this.client.admin().indices().stats(indicesStatsRequest).get();
-        // 获取分段信息
-        long totalDocs = 0;
+        // 获取分段信息并等待所有分段汇总在当期节点
+        long totalDocs;
+        boolean notAssembled;
         HashMap<Integer, String> shardToSegments = new HashMap<>();
-        IndicesSegmentsRequest indicesSegmentsRequest = new IndicesSegmentsRequest(index);
-        IndicesSegmentResponse indicesSegmentResponse = this.client.admin().indices().segments(indicesSegmentsRequest).get();
-        for (Map.Entry<Integer, IndexShardSegments> entry : indicesSegmentResponse.getIndices().get(index).getShards().entrySet()) {
-            Integer shardId = entry.getKey();
-            IndexShardSegments shards = entry.getValue();
-            for (ShardSegments shard : shards) {
-                if (shard.getShardRouting().primary()) {
+        do {
+            totalDocs = 0;
+            shardToSegments.clear();
+            notAssembled = false;
+            // 等待 5 秒
+            //noinspection BusyWait
+            Thread.sleep(5000);
+            // 查询分段信息
+            IndicesSegmentsRequest indicesSegmentsRequest = new IndicesSegmentsRequest(index);
+            IndicesSegmentResponse indicesSegmentResponse = this.client.admin().indices().segments(indicesSegmentsRequest).get();
+            for (Map.Entry<Integer, IndexShardSegments> entry : indicesSegmentResponse.getIndices().get(index).getShards().entrySet()) {
+                Integer shardId = entry.getKey();
+                IndexShardSegments shards = entry.getValue();
+                for (ShardSegments shard : shards) {
+                    // 不关心副本分片
+                    if (!shard.getShardRouting().primary()) {
+                        continue;
+                    }
+                    // 如果分片不在当前节点上
+                    if (shard.getShardRouting().currentNodeId() == null ||
+                            !shard.getShardRouting().started() ||
+                            !shard.getShardRouting().currentNodeId().equals(this.options.getNodeId())) {
+                        LOGGER.info("[eswire: {}] shard {} not migrated to current node", index, shardId);
+                        notAssembled = true;
+                    }
+                    // 汇总分段信息
                     for (Segment segment : shard.getSegments()) {
                         if (shardToSegments.get(shardId) != null) {
                             throw new IllegalStateException("got more than 1 segment per shard");
@@ -123,7 +122,7 @@ public class ElasticWire implements Closeable, AutoCloseable {
                     }
                 }
             }
-        }
+        } while (notAssembled);
         LOGGER.info("[eswire: {}] index segments = {}", index, shardToSegments);
         LOGGER.info("[eswire: {}] index segments total docs = {}", index, totalDocs);
         if (totalDocs != indicesStatsResponse.getTotal().docs.getCount()) {

@@ -15,6 +15,7 @@ public class ElasticWireOptions {
      */
     private int port;
 
+
     /**
      * 是否启用 ElasticSearch sniff，建议不启用，因为基本没啥用
      */
@@ -26,6 +27,11 @@ public class ElasticWireOptions {
     private String[] dataDirs;
 
     /**
+     * nodeId 用于辨别所有分段是否已经迁移到了当前索引
+     */
+    private String nodeId;
+
+    /**
      * 当前节点独有的 node.attr 键值对，用于将索引的所有主分片强制迁移到当前主机，默认为 eswire=yup
      */
     private String nodeAttrKey;
@@ -34,6 +40,7 @@ public class ElasticWireOptions {
 
     public ElasticWireOptions() {
         this.host = "127.0.0.1";
+        this.nodeId = "";
         this.port = 9300;
         this.sniff = false;
         this.dataDirs = new String[]{"/var/lib/elasticsearch"};
@@ -57,6 +64,7 @@ public class ElasticWireOptions {
         this.port = port;
     }
 
+
     public boolean isSniff() {
         return sniff;
     }
@@ -71,6 +79,14 @@ public class ElasticWireOptions {
 
     public void setDataDirs(String[] dataDirs) {
         this.dataDirs = dataDirs;
+    }
+
+    public String getNodeId() {
+        return nodeId;
+    }
+
+    public void setNodeId(String nodeId) {
+        this.nodeId = nodeId;
     }
 
     public String getNodeAttrKey() {
