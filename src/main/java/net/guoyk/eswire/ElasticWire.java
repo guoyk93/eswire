@@ -5,6 +5,7 @@ import org.apache.lucene.store.SimpleFSDirectory;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.action.admin.cluster.reroute.ClusterRerouteRequest;
 import org.elasticsearch.action.admin.indices.close.CloseIndexRequest;
+import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest;
 import org.elasticsearch.action.admin.indices.recovery.RecoveryRequest;
@@ -53,6 +54,10 @@ public class ElasticWire implements Closeable, AutoCloseable {
                 .build();
         this.client = new PreBuiltTransportClient(settings)
                 .addTransportAddress(new TransportAddress(InetAddress.getByName(options.getHost()), options.getPort()));
+    }
+
+    public void delete(String index) throws ExecutionException, InterruptedException {
+        this.client.admin().indices().delete(new DeleteIndexRequest(index)).get();
     }
 
     public void export(String index, ElasticWireCallback callback) throws ExecutionException, InterruptedException, IOException {

@@ -24,7 +24,7 @@
 
     <groupId>net.guoyk</groupId>
     <artifactId>eswire</artifactId>
-    <version>1.0.0-RC2</version>
+    <version>1.0.0</version>
 
     <name>${project.groupId}:${project.artifactId}</name>
     <description>a tool to export elasticsearch documents from raw files</description>
