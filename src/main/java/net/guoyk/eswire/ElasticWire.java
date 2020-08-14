@@ -3,6 +3,7 @@ package net.guoyk.eswire;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.store.SimpleFSDirectory;
 import org.apache.lucene.util.BytesRef;
+import org.elasticsearch.action.admin.cluster.reroute.ClusterRerouteRequest;
 import org.elasticsearch.action.admin.indices.close.CloseIndexRequest;
 import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest;
@@ -72,6 +73,8 @@ public class ElasticWire implements Closeable, AutoCloseable {
         updateSettingsRequest.settings(settingsBuilder.build());
         this.client.admin().indices().updateSettings(updateSettingsRequest).get();
         LOGGER.info("[eswire: {}] index routing updated", index);
+        // 强制执行集群重新路由
+        this.client.admin().cluster().reroute(new ClusterRerouteRequest()).get();
         // 等待分片迁移完成
         for (; ; ) {
             //noinspection BusyWait
@@ -138,10 +141,10 @@ public class ElasticWire implements Closeable, AutoCloseable {
                 }
             });
         }
+        LOGGER.info("[eswire: {}] index shard directories = {}", index, shardToDirs);
         if (shardToDirs.size() != shardToSegments.size()) {
             throw new IllegalStateException("missing shard dirs");
         }
-        LOGGER.info("[eswire: {}] index shard directories = {}", index, shardToDirs);
         // 使用 Lucene 库读取所有分片的数据目录
         long baseCount = 0;
         for (Map.Entry<Integer, String> entry : shardToDirs.entrySet()) {
